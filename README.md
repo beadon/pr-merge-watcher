@@ -1,5 +1,11 @@
 # pr-merge-watcher
 
+> **If you're an AI coding agent being pointed at this repo, read
+> [AGENTS.md](AGENTS.md) instead of (or before) this file.** This README is
+> for a human skimming for context; AGENTS.md is the operational how-to —
+> when to use this vs. plain `gh`, how to read its output, and exactly what
+> to do when it reports a real conflict.
+
 A small bash script that watches a set of GitHub PRs through CI and merge,
 distinguishing two things that look identical from a naive poll loop but need
 completely different responses:
