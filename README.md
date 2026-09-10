@@ -88,6 +88,24 @@ otherwise (including on timeout, printing which PRs are still unmerged).
   repo)
 - `jq`
 
+## Relationship to native `gh` commands
+
+`gh` already has two commands worth knowing about for the single-PR case:
+
+```bash
+gh pr checks <pr> --watch --fail-fast   # blocks until PR's checks resolve, exits non-zero on failure
+gh run watch <run-id> --exit-status     # blocks until one specific run finishes
+```
+
+If you're watching exactly one PR and don't care about the concurrency-cancellation
+or merge-conflict distinctions this tool exists for, those are simpler and you
+don't need this script — they're a better primitive for that narrower job.
+
+Neither one, as of writing, looks at the PR's `mergeable` field, and neither
+distinguishes a cancelled run from a genuinely failed one — they just report
+"failed" either way. That gap (plus watching *several* PRs at once, which a
+single blocking `--watch` call doesn't do) is what this script adds.
+
 ## What it deliberately doesn't do
 
 - **It doesn't resolve merge conflicts.** When it reports `REAL CONFLICT`,
