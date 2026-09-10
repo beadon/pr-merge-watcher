@@ -105,4 +105,7 @@ otherwise (including on timeout, printing which PRs are still unmerged).
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+GPLv3 — see [LICENSE](LICENSE). Kept copyleft deliberately: this touches PR
+merge/CI flow directly, and the intent is for improvements (new cancellation
+patterns, better conflict-signal detection, CI-provider support beyond `gh`)
+to flow back rather than fork away silently.

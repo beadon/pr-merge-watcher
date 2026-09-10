@@ -2,6 +2,13 @@
 #
 # pr-merge-watcher.sh — watch a set of GitHub PRs through CI and merge.
 #
+# Copyright (C) 2026 beadon
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version. See LICENSE for the full text.
+#
 # Built out of a real problem: running many auto-merge-enabled PRs against a
 # fast-moving base branch (several tickets landing per hour, from one agent
 # or several working in parallel). Two failure modes showed up immediately:
