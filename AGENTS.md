@@ -28,6 +28,18 @@ much machinery they need:
    anything — see "Reading the output" below for what each state means and
    what, if anything, you should do about it.
 
+4. **Several PRs are stuck `BEHIND` because the base branch is moving
+   faster than anyone's manually rebasing them**, and the target repo/org
+   doesn't have GitHub merge queue available (check Settings > Rules > New
+   branch ruleset for a "merge queue" rule first — it's plan/feature gated
+   and may simply not be offered even when you'd expect it to be). Use
+   `./update-stale-branches.sh` for a one-shot sweep that calls
+   `update-branch` on everything `BEHIND` and leaves `CONFLICTING` PRs
+   alone. Run it manually when you notice a backlog, not as a background
+   loop or an auto-triggered workflow on every push — the latter just
+   re-triggers CI for PRs that aren't ready to merge yet, trading one
+   CI-thrash problem for another.
+
 ## Why case 2 needs more than `gh pr checks --watch`
 
 Two things go wrong that a bare watch loop over check status won't catch:
