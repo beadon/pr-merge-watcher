@@ -109,8 +109,8 @@ event arrives. It exits on the first terminal event for every watched PR:
 |---|---|
 | `MERGED` | `pull_request` closed with `merged=true` |
 | `CLOSED` | `pull_request` closed without merging |
-| `FAILED` | **any** check run on the PR's current head completes with `failure` / `timed_out` / `action_required` / `startup_failure`, labelled required or non-required |
-| `PASSED` | only with `--until-workflow NAME`: that workflow succeeds on the PR's head (for PRs without auto-merge) |
+| `FAILED` | a **required** check (read from the base branch's protection rules) on the PR's current head completes with `failure` / `timed_out` / `action_required` / `startup_failure`. A non-required failure is logged as "not blocking" and the watch continues, because it doesn't block auto-merge. If the protection rules can't be read, every check counts as required. |
+| `PASSED` | only with `--until-workflow NAME`: that workflow completes on the PR's head and no required check failed (for PRs without auto-merge) |
 
 ```bash
 ./pr-event-watcher.py --repo OWNER/NAME --rerun-cancelled "E2E Tests (Chromium)" 101 102
@@ -177,7 +177,7 @@ Versions are tagged `vX.Y.Z`; the current version is in `VERSION`.
 
 ### 0.2.0 — 2026-10-06
 
-- **New: `pr-event-watcher.py`**, now the default watcher. It is driven by webhook events through `gh webhook forward` and does no polling. It reports a failure on **any** check on the PR's head, labelled required or non-required, and supports `--until-workflow` for PRs without auto-merge.
+- **New: `pr-event-watcher.py`**, now the default watcher. It is driven by webhook events through `gh webhook forward` and does no polling. It sees every check on the PR's head, so a failure is never missed: a required failure ends the watch, and a non-required one is logged as not blocking. It supports `--until-workflow` for PRs without auto-merge.
 - **New dependency:** the `cli/gh-webhook` gh extension (for `pr-event-watcher.py`).
 - Added `update-stale-branches.sh`, a one-shot `update-branch` sweep for PRs stuck `BEHIND`.
 - Versioning introduced (`VERSION`, `--version`, `vX.Y.Z` tags).

@@ -188,9 +188,10 @@ exactly the situation this tool was built in), two extra things matter:
 ## Default: the event-driven watcher
 
 Prefer `pr-event-watcher.py` over `pr-merge-watcher.sh`. It subscribes to
-webhook events instead of polling, and it reports a failure on **any** check
-(the polling script only looks at the checks named with `--watch-check`, so
-an unrelated required check can fail without it noticing). Run it as a
+webhook events instead of polling, and it sees **every** check. A required
+failure ends the watch, and a non-required one is logged as not blocking. The
+polling script only looks at the checks named with `--watch-check`, so an
+unrelated required check could fail without it noticing. Run it as a
 background task; it exits on the first terminal state per PR (MERGED,
 CLOSED, FAILED, or PASSED with `--until-workflow`). See README.md for the
 flags and exit codes.

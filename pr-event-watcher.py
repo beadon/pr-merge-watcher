@@ -12,11 +12,14 @@ missed.
 Terminal states, per PR:
   MERGED   pull_request closed with merged=true
   CLOSED   pull_request closed without merging
-  FAILED   any check run on the PR's current head completed with
-           failure / timed_out / action_required / startup_failure.
-           Reported with whether the check is required by branch protection.
-  PASSED   (only with --until-workflow NAME) that workflow completed with
-           success on the PR's current head. Use it for a PR without
+  FAILED   a *required* check (per the base branch's protection rules) on
+           the PR's current head completed with failure / timed_out /
+           action_required / startup_failure. Non-required failures are
+           logged but don't end the watch, since they don't block auto-merge.
+           If the protection rules can't be read, every check counts as
+           required.
+  PASSED   (only with --until-workflow NAME) that workflow completed on the
+           PR's current head and no required check failed. Use it for a PR without
            auto-merge, where "merged" would never arrive on its own.
 
 Non-terminal events are logged as they arrive: check results, new pushes
@@ -66,42 +69,66 @@ class PR:
     def __init__(self, number: int) -> None:
         self.number = number
         self.head_sha = ""
-        self.required: set[str] = set()
+        # Required check names from branch protection; None means "unknown",
+        # in which case every failure is treated as required (fail safe).
+        self.required: set[str] | None = None
+        self.non_required_failures: list[str] = []
         self.final: str | None = None
 
+    def is_required(self, name: str) -> bool:
+        return self.required is None or name in self.required
 
-def snapshot(repo: str, pr: PR) -> None:
-    """One read at startup: head SHA, merge state, required checks, finished failures."""
-    info = gh_json(["pr", "view", str(pr.number), "--repo", repo, "--json", "state,headRefOid"])
+
+def snapshot(repo: str, pr: PR, until_workflows: set[str]) -> None:
+    """One read per PR at startup, so nothing that finished before the
+    subscription opened is missed: head SHA, state, required checks, results so far."""
+    info = gh_json(["pr", "view", str(pr.number), "--repo", repo,
+                    "--json", "state,headRefOid,baseRefName"])
     pr.head_sha = info["headRefOid"]
-    if info["state"] == "MERGED":
-        pr.final = "MERGED"
-        log(f"PR #{pr.number}: MERGED (before watch started)")
-        return
-    if info["state"] == "CLOSED":
-        pr.final = "CLOSED"
-        log(f"PR #{pr.number}: CLOSED unmerged (before watch started)")
+    if info["state"] in ("MERGED", "CLOSED"):
+        pr.final = info["state"]
+        log(f"PR #{pr.number}: {pr.final} (before watch started)")
         return
     try:
-        req = gh_json(["pr", "checks", str(pr.number), "--repo", repo, "--required", "--json", "name"])
-        pr.required = {c["name"] for c in req or []}
+        prot = gh_json(["api", f"repos/{repo}/branches/{info['baseRefName']}"
+                        "/protection/required_status_checks"])
+        pr.required = set(prot.get("contexts") or []) | {
+            c["context"] for c in prot.get("checks") or []}
     except subprocess.CalledProcessError:
-        pr.required = set()  # no required checks reported yet
+        pr.required = None  # no protection, or no permission to read it
     try:
-        checks = gh_json(["pr", "checks", str(pr.number), "--repo", repo, "--json", "name,bucket"]) or []
+        checks = gh_json(["pr", "checks", str(pr.number), "--repo", repo,
+                          "--json", "name,bucket"]) or []
     except subprocess.CalledProcessError:
-        checks = []  # no checks registered yet; events will report them
-    failed = [c["name"] for c in checks if c.get("bucket") == "fail"]
-    if failed:
-        fail(pr, failed[0], "already failed before watch started")
-    else:
-        log(f"PR #{pr.number}: watching head {pr.head_sha[:8]} ({len(checks)} checks so far)")
+        checks = []  # none registered yet; events will report them
+    for c in checks:
+        if c.get("bucket") == "fail":
+            record_failure(pr, c["name"], "(before watch started)")
+            if pr.final:
+                return
+    pending = any(c.get("bucket") == "pending" for c in checks)
+    if until_workflows and checks and not pending:
+        mark_passed(pr, "all checks had already completed")
+        return
+    log(f"PR #{pr.number}: watching head {pr.head_sha[:8]} ({len(checks)} checks so far)")
 
 
-def fail(pr: PR, name: str, detail: str) -> None:
-    kind = "REQUIRED" if name in pr.required else "non-required"
-    pr.final = "FAILED"
-    log(f"PR #{pr.number}: FAILED — '{name}' ({kind}) {detail}")
+def record_failure(pr: PR, name: str, detail: str) -> None:
+    """A required failure ends the watch; a non-required one can't block
+    auto-merge, so it is logged and the watch continues."""
+    if pr.is_required(name):
+        pr.final = "FAILED"
+        log(f"PR #{pr.number}: FAILED — required check '{name}' {detail}")
+    elif name not in pr.non_required_failures:
+        pr.non_required_failures.append(name)
+        log(f"PR #{pr.number}: non-required check '{name}' failed {detail} — not blocking, still watching")
+
+
+def mark_passed(pr: PR, why: str) -> None:
+    pr.final = "PASSED"
+    extra = (f"; non-required failures: {', '.join(pr.non_required_failures)}"
+             if pr.non_required_failures else "")
+    log(f"PR #{pr.number}: PASSED — {why} on {pr.head_sha[:8]}{extra}")
 
 
 def handle(event: dict, prs: dict[int, PR], repo: str, rerun_names: set[str],
@@ -113,6 +140,7 @@ def handle(event: dict, prs: dict[int, PR], repo: str, rerun_names: set[str],
         action = event.get("action")
         if action == "synchronize":
             pr.head_sha = event["pull_request"]["head"]["sha"]
+            pr.non_required_failures = []
             log(f"PR #{pr.number}: new head {pr.head_sha[:8]} — tracking its checks")
         elif action == "closed":
             pr.final = "MERGED" if event["pull_request"].get("merged") else "CLOSED"
@@ -122,9 +150,10 @@ def handle(event: dict, prs: dict[int, PR], repo: str, rerun_names: set[str],
     wf = event.get("workflow_run")
     if wf and event.get("action") == "completed" and wf["name"] in until_workflows:
         for pr in prs.values():
-            if not pr.final and wf["head_sha"] == pr.head_sha and wf.get("conclusion") == "success":
-                pr.final = "PASSED"
-                log(f"PR #{pr.number}: PASSED — workflow '{wf['name']}' succeeded on {pr.head_sha[:8]}")
+            # A required failure would already have ended this PR's watch, so a
+            # completed run here means every required check passed.
+            if not pr.final and wf["head_sha"] == pr.head_sha and wf.get("conclusion") != "cancelled":
+                mark_passed(pr, f"workflow '{wf['name']}' completed ({wf.get('conclusion')}), no required check failed")
         return
 
     run = event.get("check_run")
@@ -135,7 +164,7 @@ def handle(event: dict, prs: dict[int, PR], repo: str, rerun_names: set[str],
         if pr.final or sha != pr.head_sha:
             continue
         if conclusion in FAIL_CONCLUSIONS:
-            fail(pr, name, f"({conclusion}) {run.get('html_url', '')}")
+            record_failure(pr, name, f"({conclusion}) {run.get('html_url', '')}")
         elif conclusion == "cancelled":
             match = re.search(r"/runs/(\d+)", run.get("details_url") or "")
             if name in rerun_names and match:
@@ -160,7 +189,7 @@ def main() -> int:
 
     prs = {n: PR(n) for n in args.prs}
     for pr in prs.values():
-        snapshot(args.repo, pr)
+        snapshot(args.repo, pr, set(args.until_workflow))
 
     def done() -> bool:
         return all(p.final for p in prs.values())
