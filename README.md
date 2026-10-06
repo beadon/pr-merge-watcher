@@ -170,3 +170,19 @@ GPLv3 — see [LICENSE](LICENSE). Kept copyleft deliberately: this touches PR
 merge/CI flow directly, and the intent is for improvements (new cancellation
 patterns, better conflict-signal detection, CI-provider support beyond `gh`)
 to flow back rather than fork away silently.
+
+## Changelog
+
+Versions are tagged `vX.Y.Z`; the current version is in `VERSION`.
+
+### 0.2.0 — 2026-10-06
+
+- **New: `pr-event-watcher.py`**, now the default watcher. It is driven by webhook events through `gh webhook forward` and does no polling. It reports a failure on **any** check on the PR's head, labelled required or non-required, and supports `--until-workflow` for PRs without auto-merge.
+- **New dependency:** the `cli/gh-webhook` gh extension (for `pr-event-watcher.py`).
+- Added `update-stale-branches.sh`, a one-shot `update-branch` sweep for PRs stuck `BEHIND`.
+- Versioning introduced (`VERSION`, `--version`, `vX.Y.Z` tags).
+
+### 0.1.0
+
+- `pr-merge-watcher.sh`: a polling watcher that reruns cancelled concurrency-locked checks and reports real conflicts.
+

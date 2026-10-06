@@ -48,6 +48,8 @@ import sys
 import threading
 import time
 
+__version__ = "0.2.0"
+
 FAIL_CONCLUSIONS = {"failure", "timed_out", "action_required", "startup_failure"}
 
 
@@ -148,6 +150,7 @@ def handle(event: dict, prs: dict[int, PR], repo: str, rerun_names: set[str],
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    ap.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     ap.add_argument("--repo", required=True)
     ap.add_argument("--timeout", type=int, default=3600)
     ap.add_argument("--until-workflow", action="append", default=[], metavar="WORKFLOW_NAME")
