@@ -177,4 +177,23 @@ exactly the situation this tool was built in), two extra things matter:
 
 ## Requirements
 
-`gh` (authenticated against the target repo) and `jq`. Nothing else.
+- `gh`, authenticated against the target repo.
+- **`cli/gh-webhook`** — `gh extension install cli/gh-webhook`. Required by
+  `pr-event-watcher.py`, which is the default watcher. Check with
+  `gh extension list`; if it's missing, ask the human to install it rather
+  than falling back to a polling loop.
+- `jq`, for the polling `pr-merge-watcher.sh`.
+- Python 3.9+, standard library only.
+
+## Default: the event-driven watcher
+
+Prefer `pr-event-watcher.py` over `pr-merge-watcher.sh`. It subscribes to
+webhook events instead of polling, and it reports a failure on **any** check
+(the polling script only looks at the checks named with `--watch-check`, so
+an unrelated required check can fail without it noticing). Run it as a
+background task; it exits on the first terminal state per PR (MERGED,
+CLOSED, FAILED, or PASSED with `--until-workflow`). See README.md for the
+flags and exit codes.
+
+Silence from a watcher is not a status. Before telling anyone a PR is
+"still running", read `gh pr checks <n>` once.

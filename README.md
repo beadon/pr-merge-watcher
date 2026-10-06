@@ -92,7 +92,44 @@ otherwise (including on timeout, printing which PRs are still unmerged).
 
 - [`gh`](https://cli.github.com/) (authenticated, with access to the target
   repo)
-- `jq`
+- `jq` (for `pr-merge-watcher.sh`)
+- **[`cli/gh-webhook`](https://github.com/cli/gh-webhook)** (for
+  `pr-event-watcher.py`, the default watcher): `gh extension install cli/gh-webhook`.
+  Needs repo admin, because `gh webhook forward` creates a temporary webhook
+  on the repo (removed again when it exits).
+- Python 3.9+ (for `pr-event-watcher.py`; standard library only)
+
+## Event-driven watcher (`pr-event-watcher.py`) — use this by default
+
+`pr-merge-watcher.sh` polls. `pr-event-watcher.py` doesn't: it subscribes to
+the repo's webhook events through `gh webhook forward` and blocks until an
+event arrives. It exits on the first terminal event for every watched PR:
+
+| State | Trigger |
+|---|---|
+| `MERGED` | `pull_request` closed with `merged=true` |
+| `CLOSED` | `pull_request` closed without merging |
+| `FAILED` | **any** check run on the PR's current head completes with `failure` / `timed_out` / `action_required` / `startup_failure`, labelled required or non-required |
+| `PASSED` | only with `--until-workflow NAME`: that workflow succeeds on the PR's head (for PRs without auto-merge) |
+
+```bash
+./pr-event-watcher.py --repo OWNER/NAME --rerun-cancelled "E2E Tests (Chromium)" 101 102
+./pr-event-watcher.py --repo OWNER/NAME --until-workflow CI 103   # no auto-merge on 103
+```
+
+Exit codes: `0` all merged/passed, `3` a check failed, `4` a PR closed
+unmerged, `1` timeout or forwarder error.
+
+The only API reads are one snapshot per PR at startup, so a check that had
+already failed before the subscription opened is still reported. New pushes
+(`synchronize`) move the tracked head SHA. GitHub allows one active
+`gh webhook forward` per repo, so run one watcher per repo with every PR on
+its command line.
+
+It does not detect a PR going `CONFLICTING` or `BEHIND`: GitHub sends no
+event when the base branch moves. If a PR sits unmerged after its checks
+pass, check `gh pr view <n> --json mergeStateStatus` once, or run
+`update-stale-branches.sh`.
 
 ## Relationship to native `gh` commands
 
